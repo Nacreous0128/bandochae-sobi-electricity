@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>반도체 전력 소모량 정적분 시뮬레이션</title>
+    <!-- KaTeX CSS 및 JS (수식 렌더링용) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-main: #2b2b2b;
+            --bg-panel: #333333;
+            --text-main: #ffffff;
+            --text-sub: #e0e0e0;
+            --btn-normal: #4a4d52;
+            --btn-hover: #5c6066;
+            --btn-calc: #388e3c;
+            --btn-calc-hover: #4caf50;
+            --accent-red: #ef5350;
+            --accent-green: #81c784;
+            --font-main: 'Malgun Gothic', 'AppleGothic', sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            display: flex;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            gap: 20px;
+        }
+
+        /* 좌측 제어 패널 */
+        .control-panel {
+            width: 550px;
+            background-color: var(--bg-panel);
+            border-radius: 12px;
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .panel-title {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        /* 둥근 버튼 스타일 */
+        button {
+            background-color: var(--btn-normal);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            font-family: var(--font-main);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 5px;
+        }
+        button:hover {
+            background-color: var(--btn-hover);
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(2px);
+        }
+        .btn-calc {
+            background-color: var(--btn-calc);
+            font-size: 18px;
+            padding: 15px 20px;
+            margin-top: 15px;
+        }
+        .btn-calc:hover {
+            background-color: var(--btn-calc-hover);
+        }
+
+        /* 수식 출력 박스 */
+        .math-box {
+            background-color: var(--bg-main);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            min-height: 90px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            border: 1px solid #444;
+        }
+        
+        .math-line {
+            margin: 5px 0;
+            font-size: 1.1em;
+            color: white;
+        }
+
+        /* 결과 출력 라벨 */
+        .result-label {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--accent-green);
+            margin-top: 10px;
+            min-height: 35px;
+        }
+
+        /* 우측 그래프 패널 */
+        .graph-panel {
+            flex: 1;
+            background-color: var(--bg-panel);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-panel);
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- 좌측 패널 -->
+    <div class="control-panel">
+        <div class="panel-title">[ 시뮬레이션 제어 ]</div>
+
+        <button onclick="generateFunctions()">1. 새로운 구간 함수 생성 (3~4차)</button>
+        <div class="math-box" id="box-funcs">
+            <div class="math-line" id="tex-f1"></div>
+            <div class="math-line" id="tex-f2"></div>
+            <div class="math-line" id="tex-f3"></div>
+        </div>
+
+        <button onclick="startAnimation()">2. 그래프 애니메이션 실행</button>
+        
+        <button onclick="showFormula()" style="margin-top: 10px;">3. 정적분 공식 도출</button>
+        <div class="math-box" id="box-formula" style="min-height: 120px;">
+            <div class="math-line" id="tex-e1" style="color: var(--text-main);"></div>
+            <div class="math-line" id="tex-e2" style="color: var(--text-main); margin-left: 20px;"></div>
+            <div class="math-line" id="tex-e3" style="color: var(--text-main); margin-left: 20px;"></div>
+        </div>
+
+        <button class="btn-calc" onclick="calculateResult()">4. 최종 소비 에너지 계산</button>
+        <div class="result-label" id="lbl-result"></div>
+    </div>
+
+    <!-- 우측 패널 -->
+    <div class="graph-panel">
+        <canvas id="plotCanvas"></canvas>
+    </div>
+</div>
+
+<script>
+    // --- [변수 및 상태 관리] ---
+    let funcData = null; // 생성된 함수 계수 저장
+    let t_vals = [];
+    let y_vals = [];
+    let animationFrameId = null;
+
+    // --- [캔버스 초기화] ---
+    const canvas = document.getElementById('plotCanvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    function resizeCanvas() {
+        // High DPI 대응
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width - 40;
+        canvas.height = rect.height - 40;
+        width = canvas.width;
+        height = canvas.height;
+        drawBaseGraph("시간에 따른 전력 소모량 변화");
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // 좌표 매핑 함수 (0~10s, 0~15W 기준)
+    function mapX(t) { return 60 + (t / 10) * (width - 80); }
+    function mapY(y) { return height - 50 - (y / 15) * (height - 80); }
+
+    // 배경 그래프 및 축 그리기
+    function drawBaseGraph(titleText) {
+        ctx.clearRect(0, 0, width, height);
+        
+        // 제목
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px "Malgun Gothic"';
+        ctx.textAlign = 'center';
+        ctx.fillText(titleText, width/2, 30);
+
+        // 그리드 그리기
+        ctx.strokeStyle = 'rgba(224, 224, 224, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        
+        // Y축 그리드
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#e0e0e0';
+        ctx.font = '12px "Malgun Gothic"';
+        for(let y=0; y<=15; y+=3) {
+            let py = mapY(y);
+            ctx.beginPath(); ctx.moveTo(mapX(0), py); ctx.lineTo(mapX(10), py); ctx.stroke();
+            ctx.fillText(y, mapX(0) - 10, py);
+        }
+        
+        // X축 그리드
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for(let t=0; t<=10; t+=2) {
+            let px = mapX(t);
+            ctx.beginPath(); ctx.moveTo(px, mapY(0)); ctx.lineTo(px, mapY(15)); ctx.stroke();
+            ctx.fillText(t, px, mapY(0) + 10);
+        }
+        ctx.setLineDash([]);
+
+        // 축 테두리
+        ctx.strokeStyle = '#888888';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(mapX(0), mapY(15), mapX(10)-mapX(0), mapY(0)-mapY(15));
+
+        // 라벨
+        ctx.fillText("시간 (초)", width/2, height - 15);
+        ctx.save();
+        ctx.translate(20, height/2);
+        ctx.rotate(-Math.PI/2);
+        ctx.fillText("전력 (W)", 0, 0);
+        ctx.restore();
+    }
+
+    // 소수점 반올림 유틸리티
+    function round(val, dec=3) {
+        let p = Math.pow(10, dec);
+        return Math.round(val * p) / p;
+    }
+
+    // --- [1. 함수 생성] ---
+    function generateFunctions() {
+        cancelAnimationFrame(animationFrameId);
+        
+        // 구간 1 (0~3초): P1 = a1*t^3 + d1
+        let a1 = round(0.01 + Math.random() * 0.04, 3);
+        let d1 = round(1.0 + Math.random() * 1.5, 1);
+        let y1 = a1 * Math.pow(3, 3) + d1;
+
+        // 구간 2 (3~7초): P2 = -a2(t-5)^4 - b2(t-5)^2 + C
+        let a2 = round(0.05 + Math.random() * 0.10, 3);
+        let b2 = round(0.5 + Math.random() * 1.0, 2);
+        let C = round(y1 + 16*a2 + 4*b2, 3);
+
+        // 구간 3 (7~10초): P3 = A(10-t)^3 + y_end
+        let y_end = round(0.5 + Math.random() * (y1 - 0.7), 2);
+        let A = round((y1 - y_end) / 27, 3);
+
+        funcData = {a1, d1, a2, b2, C, A, y_end, y1};
+
+        // 데이터 생성
+        t_vals = []; y_vals = [];
+        for(let i=0; i<=100; i++) {
+            let t = i / 10;
+            let y = 0;
+            if(t <= 3) y = a1*Math.pow(t, 3) + d1;
+            else if(t <= 7) y = -a2*Math.pow(t-5, 4) - b2*Math.pow(t-5, 2) + C;
+            else y = A*Math.pow(10-t, 3) + y_end;
+            t_vals.push(t);
+            y_vals.push(y);
+        }
+
+        // 수식 렌더링 (KaTeX)
+        katex.render(`\\mathbf{P_1(t) = ${a1}t^3 + ${d1}}`, document.getElementById('tex-f1'));
+        katex.render(`\\mathbf{P_2(t) = -${a2}(t-5)^4 - ${b2}(t-5)^2 + ${C}}`, document.getElementById('tex-f2'));
+        katex.render(`\\mathbf{P_3(t) = ${A}(10-t)^3 + ${y_end}}`, document.getElementById('tex-f3'));
+
+        // UI 초기화
+        document.getElementById('tex-e1').innerHTML = "";
+        document.getElementById('tex-e2').innerHTML = "";
+        document.getElementById('tex-e3').innerHTML = "";
+        document.getElementById('lbl-result').innerText = "";
+        drawBaseGraph("시간에 따른 전력 소모량 변화");
+    }
+
+    // --- [2. 그래프 애니메이션] ---
+    function startAnimation() {
+        if(!funcData) return;
+        cancelAnimationFrame(animationFrameId);
+        
+        let frame = 0;
+        let totalFrames = t_vals.length;
+
+        function animate() {
+            drawBaseGraph("시간에 따른 전력 소모량 변화 (기록 중...)");
+            
+            ctx.beginPath();
+            ctx.strokeStyle = '#00bcd4';
+            ctx.lineWidth = 4;
+            ctx.moveTo(mapX(t_vals[0]), mapY(y_vals[0]));
+            for(let i=1; i<=frame; i++) {
+                ctx.lineTo(mapX(t_vals[i]), mapY(y_vals[i]));
+            }
+            ctx.stroke();
+
+            if(frame < totalFrames - 1) {
+                frame += 2; // 재생 속도 조절
+                if(frame > totalFrames - 1) frame = totalFrames - 1;
+                animationFrameId = requestAnimationFrame(animate);
+            } else {
+                drawBaseGraph("시간에 따른 전력 소모량 변화 (완료)");
+                ctx.beginPath();
+                ctx.moveTo(mapX(t_vals[0]), mapY(y_vals[0]));
+                for(let i=1; i<totalFrames; i++) ctx.lineTo(mapX(t_vals[i]), mapY(y_vals[i]));
+                ctx.stroke();
+            }
+        }
+        animate();
+    }
+
+    // --- [3. 정적분 수식 표시] ---
+    function showFormula() {
+        if(!funcData) return;
+        const f = funcData;
+        katex.render(`\\mathbf{E = \\int_{0}^{3} \\left( ${f.a1}t^3 + ${f.d1} \\right) dt}`, document.getElementById('tex-e1'));
+        katex.render(`\\mathbf{+ \\int_{3}^{7} \\left( -${f.a2}(t-5)^4 - ${f.b2}(t-5)^2 + ${f.C} \\right) dt}`, document.getElementById('tex-e2'));
+        katex.render(`\\mathbf{+ \\int_{7}^{10} \\left( ${f.A}(10-t)^3 + ${f.y_end} \\right) dt}`, document.getElementById('tex-e3'));
+    }
+
+    // --- [4. 결과 계산 및 면적 칠하기] ---
+    function calculateResult() {
+        if(!funcData) return;
+        const f = funcData;
+        
+        // 정적분 실제 계산 로직 (Power rule 적용)
+        let E1 = (81/4)*f.a1 + 3*f.d1;
+        let E2 = 2 * ( -(32/5)*f.a2 - (8/3)*f.b2 + 2*f.C ); // 우함수 성질 적용
+        let E3 = (81/4)*f.A + 3*f.y_end;
+        let totalE = E1 + E2 + E3;
+
+        document.getElementById('lbl-result').innerText = `총 소비 에너지 = ${totalE.toFixed(2)} J`;
+
+        // 완료된 선 먼저 다시 그리기
+        drawBaseGraph("시간에 따른 전력 소모량 변화 (완료)");
+        
+        // 면적 칠하기 헬퍼 함수
+        function fillArea(startIdx, endIdx, color) {
+            ctx.beginPath();
+            ctx.fillStyle = color;
+            ctx.moveTo(mapX(t_vals[startIdx]), mapY(0));
+            for(let i=startIdx; i<=endIdx; i++) ctx.lineTo(mapX(t_vals[i]), mapY(y_vals[i]));
+            ctx.lineTo(mapX(t_vals[endIdx]), mapY(0));
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // 인덱스 기준 분할 (100칸 기준: 3s=30, 7s=70)
+        fillArea(0, 30, 'rgba(41, 182, 246, 0.4)'); // 대기 (파랑)
+        fillArea(30, 70, 'rgba(239, 83, 80, 0.4)');  // 부하 (빨강)
+        fillArea(70, 100, 'rgba(102, 187, 106, 0.4)'); // 안정화 (초록)
+
+        // 덮어씌워진 선 다시 선명하게 그리기
+        ctx.beginPath();
+        ctx.strokeStyle = '#00bcd4';
+        ctx.lineWidth = 4;
+        ctx.moveTo(mapX(t_vals[0]), mapY(y_vals[0]));
+        for(let i=1; i<t_vals.length; i++) ctx.lineTo(mapX(t_vals[i]), mapY(y_vals[i]));
+        ctx.stroke();
+
+        // 범례 박스 그리기
+        ctx.fillStyle = 'rgba(43, 43, 43, 0.8)';
+        ctx.fillRect(width - 160, 40, 140, 80);
+        ctx.strokeStyle = '#555';
+        ctx.strokeRect(width - 160, 40, 140, 80);
+        
+        ctx.font = '12px "Malgun Gothic"';
+        ctx.fillStyle = '#e0e0e0';
+        
+        ctx.fillStyle = 'rgba(41, 182, 246, 0.6)'; ctx.fillRect(width-150, 50, 15, 15);
+        ctx.fillStyle = '#e0e0e0'; ctx.fillText("대기 모드 에너지", width-75, 58);
+        
+        ctx.fillStyle = 'rgba(239, 83, 80, 0.6)'; ctx.fillRect(width-150, 75, 15, 15);
+        ctx.fillStyle = '#e0e0e0'; ctx.fillText("부하 모드 에너지", width-75, 83);
+        
+        ctx.fillStyle = 'rgba(102, 187, 106, 0.6)'; ctx.fillRect(width-150, 100, 15, 15);
+        ctx.fillStyle = '#e0e0e0'; ctx.fillText("안정화 모드 에너지", width-75, 108);
+    }
+
+    // 초기 실행
+    setTimeout(resizeCanvas, 100);
+</script>
+
+</body>
+</html>
